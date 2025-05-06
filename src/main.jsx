@@ -12,6 +12,7 @@ import EmployeeHallTracker from "./components/employeeHallTracker.jsx";
 import Signup from "./components/signup.jsx";
 import Login from "./components/login.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import Userslist from "./components/userslist.jsx";
 
 const router = createBrowserRouter([
   {
@@ -21,6 +22,14 @@ const router = createBrowserRouter([
   {
     path: "*",
     element: <Login />,
+  },
+  {
+    path: "/userslist",
+    element: (
+      <ProtectedRoute>
+        <Userslist />
+      </ProtectedRoute>
+    ),
   },
   {
     path: "/home",

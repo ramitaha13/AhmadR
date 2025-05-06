@@ -12,6 +12,7 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
+  Users,
 } from "lucide-react";
 
 const Signup = () => {
@@ -19,6 +20,10 @@ const Signup = () => {
 
   const goToHome = () => {
     navigate("/home");
+  };
+
+  const goToUsersList = () => {
+    navigate("/userslist");
   };
 
   // Form state
@@ -137,10 +142,10 @@ const Signup = () => {
         phone: "",
       });
 
-      // Redirect to login after 2 seconds
+      // Stay on the same page and clear success message after 5 seconds
       setTimeout(() => {
-        navigate("/login");
-      }, 2000);
+        setSuccessMessage("");
+      }, 5000);
     } catch (err) {
       console.error("Error creating user:", err);
       setError("אירעה שגיאה בתהליך ההרשמה. אנא נסה שנית");
@@ -174,7 +179,13 @@ const Signup = () => {
           <h2 className="text-center text-3xl font-extrabold text-gray-900">
             הרשמה למערכת
           </h2>
-          <div className="w-6"></div> {/* Empty div for centering */}
+          <button
+            onClick={goToUsersList}
+            className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            aria-label="רשימת משתמשים"
+          >
+            <Users className="h-6 w-6 text-blue-600" />
+          </button>
         </div>
       </div>
 
@@ -368,6 +379,18 @@ const Signup = () => {
                 }`}
               >
                 {loading ? "מעבד..." : "הרשמה"}
+              </button>
+            </div>
+
+            {/* Users List Button */}
+            <div>
+              <button
+                type="button"
+                onClick={goToUsersList}
+                className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <Users className="h-5 w-5 ml-2" />
+                רשימת משתמשים
               </button>
             </div>
           </form>
