@@ -9,6 +9,7 @@ import {
   Building,
   Search,
   CheckCircle,
+  Car,
 } from "lucide-react";
 import { firestore } from "../firebase"; // Import your firebase db
 import { collection, getDocs, doc } from "firebase/firestore";
@@ -21,6 +22,7 @@ const EmployeeHallTracker = () => {
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [assignmentData, setAssignmentData] = useState([]);
   const [workingDaysCount, setWorkingDaysCount] = useState(0);
+  const [carDaysCount, setCarDaysCount] = useState(0);
   const [dateRange, setDateRange] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       .toISOString()
@@ -55,6 +57,7 @@ const EmployeeHallTracker = () => {
             assignedHall: data.assignedHall,
             attendance: data.attendance || {},
             dailyHalls: data.dailyHalls || {},
+            carAvailability: data.carAvailability || {}, // Add car availability
           };
         });
 
@@ -83,16 +86,18 @@ const EmployeeHallTracker = () => {
     if (!employee) {
       setAssignmentData([]);
       setWorkingDaysCount(0);
+      setCarDaysCount(0);
       return;
     }
 
-    const { attendance, dailyHalls, assignedHall } = employee;
+    const { attendance, dailyHalls, assignedHall, carAvailability } = employee;
     const { startDate, endDate } = dateRange;
 
     const start = new Date(startDate);
     const end = new Date(endDate);
     const assignmentArray = [];
     let workingCount = 0;
+    let carCount = 0;
 
     // Loop through each day in the date range
     for (
@@ -120,17 +125,25 @@ const EmployeeHallTracker = () => {
           weekday: "long",
         });
 
+        // Check if employee had a car that day
+        const hadCar = carAvailability[dateString] === true;
+        if (hadCar) {
+          carCount++;
+        }
+
         assignmentArray.push({
           date: dateString,
           dayOfWeek: dayOfWeek,
           working: true, // Always true since we're only showing working days
           hallId: hallId,
           hallName: hallName,
+          hadCar: hadCar,
         });
       }
     }
 
     setWorkingDaysCount(workingCount);
+    setCarDaysCount(carCount);
     setAssignmentData(assignmentArray);
   };
 
@@ -162,11 +175,16 @@ const EmployeeHallTracker = () => {
     const employee = employees.find((emp) => emp.id === selectedEmployee);
 
     // Create CSV header
-    let csvContent = "תאריך,יום,אולם\n";
+    let csvContent = "תאריך,יום,אולם,יש רכב\n";
 
     // Add each day as a row
     assignmentData.forEach((day) => {
-      const row = [formatDate(day.date), day.dayOfWeek, day.hallName]
+      const row = [
+        formatDate(day.date),
+        day.dayOfWeek,
+        day.hallName,
+        day.hadCar ? "כן" : "לא",
+      ]
         .map((field) => `"${field}"`)
         .join(",");
 
@@ -253,20 +271,35 @@ const EmployeeHallTracker = () => {
             </div>
           </div>
 
-          {/* Total Working Days Summary */}
+          {/* Summary Stats */}
           {selectedEmployee && assignmentData.length > 0 && (
-            <div className="mb-6 bg-blue-50 p-4 rounded-lg">
-              <div className="flex items-center">
-                <CheckCircle size={24} className="text-green-600 ml-2" />
-                <h3 className="text-lg font-medium">
-                  סך הכל ימי עבודה:{" "}
-                  <span className="font-bold">{workingDaysCount}</span>
-                </h3>
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="flex items-center">
+                  <CheckCircle size={24} className="text-green-600 ml-2" />
+                  <h3 className="text-lg font-medium">
+                    סך הכל ימי עבודה:{" "}
+                    <span className="font-bold">{workingDaysCount}</span>
+                  </h3>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">
+                  {employees.find((emp) => emp.id === selectedEmployee)?.name}{" "}
+                  עבד/ה {workingDaysCount} ימים בטווח התאריכים שנבחר.
+                </p>
               </div>
-              <p className="text-sm text-gray-600 mt-1">
-                {employees.find((emp) => emp.id === selectedEmployee)?.name}{" "}
-                עבד/ה {workingDaysCount} ימים בטווח התאריכים שנבחר.
-              </p>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="flex items-center">
+                  <Car size={24} className="text-blue-600 ml-2" />
+                  <h3 className="text-lg font-medium">
+                    ימים עם רכב:{" "}
+                    <span className="font-bold">{carDaysCount}</span>
+                  </h3>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">
+                  מתוך {workingDaysCount} ימי עבודה, היה רכב ב-{carDaysCount}{" "}
+                  ימים.
+                </p>
+              </div>
             </div>
           )}
 
@@ -302,6 +335,9 @@ const EmployeeHallTracker = () => {
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         אולם משובץ
                       </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        יש רכב
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -326,6 +362,17 @@ const EmployeeHallTracker = () => {
                               className="ml-2 text-gray-500"
                             />
                             {day.hallName}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                          <div
+                            className={`inline-flex items-center justify-center p-1 rounded-full ${
+                              day.hadCar
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-500"
+                            }`}
+                          >
+                            <Car size={18} />
                           </div>
                         </td>
                       </tr>

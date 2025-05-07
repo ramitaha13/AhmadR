@@ -9,6 +9,7 @@ import {
   X,
   Download,
   ArrowRight,
+  Car,
 } from "lucide-react";
 import { firestore } from "../firebase"; // Import your firebase db
 import {
@@ -76,6 +77,10 @@ const StaffPresenceTracker = () => {
           const dailyHalls = data.dailyHalls || {};
           const todayHall = dailyHalls[currentDate] || "";
 
+          // Check if employee has car for today
+          const carData = data.carAvailability || {};
+          const hasCarToday = carData[currentDate] === true;
+
           return {
             id: doc.id,
             name: data.name,
@@ -85,6 +90,7 @@ const StaffPresenceTracker = () => {
             todayHall: todayHall,
             workingDays: data.workingDays || "0",
             workingToday: isWorkingToday,
+            hasCarToday: hasCarToday,
           };
         });
 
@@ -172,6 +178,43 @@ const StaffPresenceTracker = () => {
     }
   };
 
+  // Toggle car availability for an employee on the current day
+  const toggleCarAvailability = async (id) => {
+    try {
+      const employeeToUpdate = employees.find((emp) => emp.id === id);
+      const employeeRef = doc(firestore, "employees", id);
+
+      // Create a new status based on the current one
+      const newCarStatus = !employeeToUpdate.hasCarToday;
+
+      // Update in Firestore
+      await updateDoc(employeeRef, {
+        [`carAvailability.${currentDate}`]: newCarStatus,
+      });
+
+      // Update local state
+      setEmployees(
+        employees.map((employee) =>
+          employee.id === id
+            ? {
+                ...employee,
+                hasCarToday: newCarStatus,
+              }
+            : employee
+        )
+      );
+
+      // Show quick feedback (optional)
+      const actionText = newCarStatus ? "יש רכב היום" : "אין רכב היום";
+      console.log(
+        `${employeeToUpdate.name} ${actionText} לתאריך ${formattedDate}`
+      );
+    } catch (error) {
+      console.error("שגיאה בעדכון זמינות רכב: ", error);
+      alert("שגיאה בעדכון זמינות רכב. אנא נסה שנית.");
+    }
+  };
+
   // Update employee's hall for the selected day
   const updateEmployeeHall = async (id, hallId) => {
     try {
@@ -214,7 +257,8 @@ const StaffPresenceTracker = () => {
   // Export employee list to CSV
   const exportToCSV = () => {
     // Create CSV header
-    let csvContent = "שם,מספר טלפון,דוא״ל,אולם משויך,ימי עבודה,עובד היום\n";
+    let csvContent =
+      "שם,מספר טלפון,דוא״ל,אולם משויך,ימי עבודה,עובד היום,יש רכב\n";
 
     // Add each employee as a row
     employees.forEach((employee) => {
@@ -229,6 +273,7 @@ const StaffPresenceTracker = () => {
         hallName,
         employee.workingDays || "0",
         employee.workingToday ? "כן" : "לא",
+        employee.hasCarToday ? "כן" : "לא",
       ]
         .map((field) => `"${field}"`)
         .join(",");
@@ -249,6 +294,11 @@ const StaffPresenceTracker = () => {
 
   // Count working employees
   const workingCount = employees.filter((emp) => emp.workingToday).length;
+
+  // Count employees with cars
+  const carsCount = employees.filter(
+    (emp) => emp.hasCarToday && emp.workingToday
+  ).length;
 
   const goBackToDashboard = () => {
     navigate("/home");
@@ -325,7 +375,7 @@ const StaffPresenceTracker = () => {
           </div>
 
           {/* Summary Stats */}
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="font-medium mb-2 text-gray-700 flex items-center">
                 <CheckCircle size={18} className="ml-2 text-green-600" />
@@ -343,6 +393,13 @@ const StaffPresenceTracker = () => {
               <p className="text-3xl font-bold text-red-600">
                 {employees.length - workingCount}
               </p>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="font-medium mb-2 text-gray-700 flex items-center">
+                <Car size={18} className="ml-2 text-blue-600" />
+                עובדים עם רכב
+              </h3>
+              <p className="text-3xl font-bold text-blue-600">{carsCount}</p>
             </div>
           </div>
 
@@ -371,13 +428,16 @@ const StaffPresenceTracker = () => {
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       סטטוס
                     </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      יש רכב
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {employees.length === 0 ? (
                     <tr>
                       <td
-                        colSpan="6"
+                        colSpan="7"
                         className="px-6 py-4 text-center text-sm text-gray-500"
                       >
                         לא נמצאו עובדים לפי הקריטריונים שנבחרו.
@@ -434,6 +494,24 @@ const StaffPresenceTracker = () => {
                             ) : (
                               <X size={18} />
                             )}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                          <button
+                            onClick={() => toggleCarAvailability(employee.id)}
+                            className={`p-2 rounded-full ${
+                              employee.hasCarToday
+                                ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                            }`}
+                            title={
+                              employee.hasCarToday
+                                ? "יש רכב היום"
+                                : "אין רכב היום"
+                            }
+                            disabled={!employee.workingToday}
+                          >
+                            <Car size={18} />
                           </button>
                         </td>
                       </tr>
