@@ -8,6 +8,7 @@ import {
   Calendar,
   RotateCcw,
   ArrowRight,
+  Car,
 } from "lucide-react";
 import { firestore } from "../firebase"; // ייבוא מסד הנתונים שלך מפיירבייס
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
@@ -27,6 +28,9 @@ const StaffSalaryTracker = () => {
     0
   ).getDate();
 
+  // קבלת תאריך היום בפורמט YYYY-MM-DD
+  const currentDate = today.toISOString().split("T")[0];
+
   // שליפת עובדים מ-Firestore
   useEffect(() => {
     const fetchData = async () => {
@@ -40,6 +44,15 @@ const StaffSalaryTracker = () => {
           const dailyRate = data.dailyRate || "0";
           const hoursPerDay = data.hoursPerDay || 8;
 
+          // בדיקה אם יש רכב היום
+          const carAvailability = data.carAvailability || {};
+          const hasCarToday = carAvailability[currentDate] === true;
+
+          // חישוב מספר הימים שיש לעובד רכב
+          const carDaysCount = Object.values(carAvailability).filter(
+            (value) => value === true
+          ).length;
+
           return {
             id: doc.id,
             name: data.name,
@@ -50,6 +63,9 @@ const StaffSalaryTracker = () => {
             hoursPerDay: hoursPerDay,
             attendance: data.attendance || {},
             dailyHalls: data.dailyHalls || {},
+            carAvailability: carAvailability,
+            hasCarToday: hasCarToday,
+            carDaysCount: carDaysCount,
           };
         });
 
@@ -105,11 +121,12 @@ const StaffSalaryTracker = () => {
       try {
         const employeeRef = doc(firestore, "employees", id);
 
-        // עדכון Firestore: איפוס workingDays ל-"0", attendance לאובייקט ריק, dailyHalls לאובייקט ריק
+        // עדכון Firestore: איפוס workingDays ל-"0", attendance לאובייקט ריק, dailyHalls לאובייקט ריק, carAvailability לאובייקט ריק
         await updateDoc(employeeRef, {
           workingDays: "0",
           attendance: {},
           dailyHalls: {},
+          carAvailability: {},
         });
 
         // עדכון המצב המקומי
@@ -121,6 +138,9 @@ const StaffSalaryTracker = () => {
                   workingDays: "0",
                   attendance: {},
                   dailyHalls: {},
+                  carAvailability: {},
+                  hasCarToday: false,
+                  carDaysCount: 0,
                 }
               : employee
           )
@@ -157,7 +177,7 @@ const StaffSalaryTracker = () => {
   const exportToCSV = () => {
     // יצירת כותרת CSV
     let csvContent =
-      'שם,מספר טלפון,דוא"ל,ימי עבודה,שכר יומי,שעות ליום,משכורת חודשית\n';
+      'שם,מספר טלפון,דוא"ל,ימי עבודה,ימים עם רכב,שכר יומי,שעות ליום,משכורת חודשית\n';
 
     // הוספת כל עובד כשורה
     employees.forEach((employee) => {
@@ -171,6 +191,7 @@ const StaffSalaryTracker = () => {
         employee.contactNumber || "-",
         employee.email || "-",
         employee.workingDays || "0",
+        employee.carDaysCount || "0",
         employee.dailyRate,
         employee.hoursPerDay,
         monthlySalary,
@@ -265,6 +286,9 @@ const StaffSalaryTracker = () => {
                       ימי עבודה
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ימים עם רכב
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       שכר יומי
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -279,7 +303,7 @@ const StaffSalaryTracker = () => {
                   {employees.length === 0 ? (
                     <tr>
                       <td
-                        colSpan="6"
+                        colSpan="7"
                         className="px-6 py-4 text-center text-sm text-gray-500"
                       >
                         לא נמצאו עובדים.
@@ -302,6 +326,17 @@ const StaffSalaryTracker = () => {
                             <Calendar
                               size={16}
                               className="mr-2 ml-2 text-gray-500"
+                            />
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                          <div className="flex items-center justify-end">
+                            <span className="text-sm">
+                              {employee.carDaysCount || "0"}
+                            </span>
+                            <Car
+                              size={16}
+                              className="mr-2 ml-2 text-blue-600"
                             />
                           </div>
                         </td>

@@ -81,6 +81,11 @@ const StaffPresenceTracker = () => {
           const carData = data.carAvailability || {};
           const hasCarToday = carData[currentDate] === true;
 
+          // Count how many days the employee has a car
+          const carDaysCount = Object.values(carData).filter(
+            (value) => value === true
+          ).length;
+
           return {
             id: doc.id,
             name: data.name,
@@ -91,6 +96,7 @@ const StaffPresenceTracker = () => {
             workingDays: data.workingDays || "0",
             workingToday: isWorkingToday,
             hasCarToday: hasCarToday,
+            carDaysCount: carDaysCount,
           };
         });
 
@@ -192,6 +198,14 @@ const StaffPresenceTracker = () => {
         [`carAvailability.${currentDate}`]: newCarStatus,
       });
 
+      // Calculate the new carDaysCount
+      let newCarDaysCount = employeeToUpdate.carDaysCount;
+      if (newCarStatus) {
+        newCarDaysCount += 1;
+      } else {
+        newCarDaysCount = Math.max(0, newCarDaysCount - 1);
+      }
+
       // Update local state
       setEmployees(
         employees.map((employee) =>
@@ -199,6 +213,7 @@ const StaffPresenceTracker = () => {
             ? {
                 ...employee,
                 hasCarToday: newCarStatus,
+                carDaysCount: newCarDaysCount,
               }
             : employee
         )
@@ -258,7 +273,7 @@ const StaffPresenceTracker = () => {
   const exportToCSV = () => {
     // Create CSV header
     let csvContent =
-      "שם,מספר טלפון,דוא״ל,אולם משויך,ימי עבודה,עובד היום,יש רכב\n";
+      "שם,מספר טלפון,דוא״ל,אולם משויך,ימי עבודה,עובד היום,יש רכב,ימים עם רכב\n";
 
     // Add each employee as a row
     employees.forEach((employee) => {
@@ -274,6 +289,7 @@ const StaffPresenceTracker = () => {
         employee.workingDays || "0",
         employee.workingToday ? "כן" : "לא",
         employee.hasCarToday ? "כן" : "לא",
+        employee.carDaysCount || "0",
       ]
         .map((field) => `"${field}"`)
         .join(",");
@@ -425,6 +441,9 @@ const StaffPresenceTracker = () => {
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       ימי עבודה
                     </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ימים עם רכב
+                    </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       סטטוס
                     </th>
@@ -437,7 +456,7 @@ const StaffPresenceTracker = () => {
                   {employees.length === 0 ? (
                     <tr>
                       <td
-                        colSpan="7"
+                        colSpan="8"
                         className="px-6 py-4 text-center text-sm text-gray-500"
                       >
                         לא נמצאו עובדים לפי הקריטריונים שנבחרו.
@@ -474,6 +493,10 @@ const StaffPresenceTracker = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {employee.workingDays || "0"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center">
+                          <Car size={16} className="ml-2 text-blue-600" />
+                          {employee.carDaysCount || "0"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
                           <button
