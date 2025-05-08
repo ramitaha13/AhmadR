@@ -1,14 +1,22 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Calendar, Home, Building, ArrowRight } from "lucide-react";
+import {
+  Users,
+  Calendar,
+  Home,
+  Building,
+  ArrowRight,
+  RefreshCw,
+} from "lucide-react";
 import { firestore } from "../firebase"; // Import your firebase db
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 
 const HallWorkingDaysTracker = () => {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [halls, setHalls] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
 
   // Get current month and year
   const today = new Date();
@@ -19,12 +27,16 @@ const HallWorkingDaysTracker = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch halls
+        // Fetch halls with workingDays field
         const hallsCollection = collection(firestore, "halls");
         const hallSnapshot = await getDocs(hallsCollection);
         const hallsList = hallSnapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
+          location: doc.data().location || "",
+          // Get workingDays directly from hall document
+          workingDays: parseInt(doc.data().workingDays || "0"),
+          employees: doc.data().employees || [],
         }));
 
         // Fetch employees
@@ -80,7 +92,37 @@ const HallWorkingDaysTracker = () => {
     };
 
     fetchData();
-  }, []);
+  }, [resetting]); // Re-fetch data after resetting
+
+  // Function to reset the working days for a specific hall
+  const resetHallWorkingDays = async (hallId) => {
+    try {
+      setResetting(true);
+      // Get a reference to the hall document
+      const hallRef = doc(firestore, "halls", hallId);
+
+      // Update the workingDays field to "0"
+      await updateDoc(hallRef, {
+        workingDays: "0",
+      });
+
+      // Show confirmation
+      alert("ימי העבודה אופסו בהצלחה!");
+
+      // Update the local state
+      setHalls(
+        halls.map((hall) =>
+          hall.id === hallId ? { ...hall, workingDays: 0 } : hall
+        )
+      );
+
+      setResetting(false);
+    } catch (error) {
+      console.error("שגיאה באיפוס ימי עבודה:", error);
+      alert("שגיאה באיפוס ימי עבודה. אנא נסה שנית.");
+      setResetting(false);
+    }
+  };
 
   // Prepare hall-based statistics
   const hallStats = halls.map((hall) => {
@@ -89,17 +131,13 @@ const HallWorkingDaysTracker = () => {
       (emp) => emp.hallWorkingDays[hall.id] && emp.hallWorkingDays[hall.id] > 0
     );
 
-    // Calculate total days worked in this hall
-    const totalDaysWorked = hallEmployees.reduce(
-      (total, emp) => total + (emp.hallWorkingDays[hall.id] || 0),
-      0
-    );
-
     return {
       id: hall.id,
       name: hall.name,
+      location: hall.location,
+      // Use workingDays directly from the hall document
+      totalDaysWorked: hall.workingDays,
       employeeCount: hallEmployees.length,
-      totalDaysWorked: totalDaysWorked,
       employees: hallEmployees.map((emp) => ({
         id: emp.id,
         name: emp.name,
@@ -112,8 +150,9 @@ const HallWorkingDaysTracker = () => {
 
   // Calculate total statistics
   const totalEmployees = employees.length;
-  const totalWorkingDays = employees.reduce(
-    (total, emp) => total + parseInt(emp.workingDays || "0"),
+  // Calculate total working days from halls collection
+  const totalWorkingDays = halls.reduce(
+    (total, hall) => total + hall.workingDays,
     0
   );
 
@@ -202,7 +241,28 @@ const HallWorkingDaysTracker = () => {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">סה"כ ימי עבודה</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">סה"כ ימי עבודה</p>
+                      <button
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `האם אתה בטוח שברצונך לאפס את ימי העבודה באולם ${hall.name}?`
+                            )
+                          ) {
+                            resetHallWorkingDays(hall.id);
+                          }
+                        }}
+                        className="p-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600"
+                        title="איפוס ימי עבודה"
+                        disabled={resetting}
+                      >
+                        <RefreshCw
+                          size={12}
+                          className={resetting ? "animate-spin" : ""}
+                        />
+                      </button>
+                    </div>
                     <p className="text-lg font-semibold text-gray-800 flex items-center">
                       <Calendar size={16} className="ml-1 text-green-600" />
                       {hall.totalDaysWorked}

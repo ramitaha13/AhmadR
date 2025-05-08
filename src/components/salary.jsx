@@ -9,6 +9,7 @@ import {
   RotateCcw,
   ArrowRight,
   Car,
+  MessageSquare,
 } from "lucide-react";
 import { firestore } from "../firebase"; // ייבוא מסד הנתונים שלך מפיירבייס
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
@@ -17,6 +18,7 @@ const StaffSalaryTracker = () => {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editingComment, setEditingComment] = useState(null);
 
   // קבלת פרטי החודש הנוכחי לחישוב משכורת
   const today = new Date();
@@ -43,6 +45,7 @@ const StaffSalaryTracker = () => {
           // קבלת פרטי שכר או הגדרת ברירות מחדל
           const dailyRate = data.dailyRate || "0";
           const hoursPerDay = data.hoursPerDay || 8;
+          const comment = data.comment || ""; // שליפת הערה אם קיימת
 
           // בדיקה אם יש רכב היום
           const carAvailability = data.carAvailability || {};
@@ -66,6 +69,7 @@ const StaffSalaryTracker = () => {
             carAvailability: carAvailability,
             hasCarToday: hasCarToday,
             carDaysCount: carDaysCount,
+            comment: comment, // הוספת שדה הערה
           };
         });
 
@@ -107,6 +111,36 @@ const StaffSalaryTracker = () => {
     } catch (error) {
       console.error("שגיאה בעדכון שכר יומי: ", error);
       alert("שגיאה בעדכון שכר יומי. אנא נסה שנית.");
+    }
+  };
+
+  // עדכון הערה לעובד
+  const updateComment = async (id, newComment) => {
+    try {
+      const employeeRef = doc(firestore, "employees", id);
+
+      // עדכון שדה comment ב-Firestore
+      await updateDoc(employeeRef, {
+        comment: newComment,
+      });
+
+      // עדכון המצב המקומי
+      setEmployees(
+        employees.map((employee) =>
+          employee.id === id
+            ? {
+                ...employee,
+                comment: newComment,
+              }
+            : employee
+        )
+      );
+
+      console.log(`הערה עודכנה עבור עובד ${id}`);
+      setEditingComment(null); // סגירת מצב עריכה
+    } catch (error) {
+      console.error("שגיאה בעדכון הערה: ", error);
+      alert("שגיאה בעדכון הערה. אנא נסה שנית.");
     }
   };
 
@@ -177,7 +211,7 @@ const StaffSalaryTracker = () => {
   const exportToCSV = () => {
     // יצירת כותרת CSV
     let csvContent =
-      'שם,מספר טלפון,דוא"ל,ימי עבודה,ימים עם רכב,שכר יומי,שעות ליום,משכורת חודשית\n';
+      'שם,מספר טלפון,דוא"ל,ימי עבודה,ימים עם רכב,הערה,שכר יומי,שעות ליום,משכורת חודשית\n';
 
     // הוספת כל עובד כשורה
     employees.forEach((employee) => {
@@ -192,6 +226,7 @@ const StaffSalaryTracker = () => {
         employee.email || "-",
         employee.workingDays || "0",
         employee.carDaysCount || "0",
+        employee.comment || "-", // הוספת הערה לייצוא
         employee.dailyRate,
         employee.hoursPerDay,
         monthlySalary,
@@ -289,6 +324,9 @@ const StaffSalaryTracker = () => {
                       ימים עם רכב
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      הערה
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       שכר יומי
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -303,7 +341,7 @@ const StaffSalaryTracker = () => {
                   {employees.length === 0 ? (
                     <tr>
                       <td
-                        colSpan="7"
+                        colSpan="8"
                         className="px-6 py-4 text-center text-sm text-gray-500"
                       >
                         לא נמצאו עובדים.
@@ -339,6 +377,45 @@ const StaffSalaryTracker = () => {
                               className="mr-2 ml-2 text-blue-600"
                             />
                           </div>
+                        </td>
+                        {/* תא הערה */}
+                        <td className="px-6 py-4 text-sm text-gray-500 text-right">
+                          {editingComment === employee.id ? (
+                            <div className="flex items-center justify-end">
+                              <textarea
+                                value={employee.comment || ""}
+                                onChange={(e) => {
+                                  setEmployees(
+                                    employees.map((emp) =>
+                                      emp.id === employee.id
+                                        ? { ...emp, comment: e.target.value }
+                                        : emp
+                                    )
+                                  );
+                                }}
+                                onBlur={() =>
+                                  updateComment(employee.id, employee.comment)
+                                }
+                                className="w-full px-2 py-1 border border-gray-300 rounded-md text-sm"
+                                placeholder="הוסף הערה..."
+                                rows="2"
+                                style={{ minWidth: "150px" }}
+                              />
+                            </div>
+                          ) : (
+                            <div
+                              className="flex items-center justify-end cursor-pointer"
+                              onClick={() => setEditingComment(employee.id)}
+                            >
+                              <span className="text-sm max-w-[150px] truncate">
+                                {employee.comment || "הוסף הערה..."}
+                              </span>
+                              <MessageSquare
+                                size={16}
+                                className="mr-2 ml-2 text-gray-500"
+                              />
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
                           <div className="flex items-center justify-end">

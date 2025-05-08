@@ -19,6 +19,7 @@ import {
   updateDoc,
   query,
   where,
+  getDoc,
 } from "firebase/firestore";
 
 const StaffPresenceTracker = () => {
@@ -49,6 +50,9 @@ const StaffPresenceTracker = () => {
         const hallsList = hallSnapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name,
+          location: doc.data().location || "",
+          workingDays: doc.data().workingDays || "0", // Add workingDays for halls
+          employees: doc.data().employees || [],
         }));
         setHalls(hallsList);
 
@@ -157,6 +161,40 @@ const StaffPresenceTracker = () => {
           workingDays: String(newWorkingDays),
         });
 
+        // If the employee was assigned to a hall today and now is not working,
+        // also decrement the hall's workingDays and remove the hall assignment
+        if (employeeToUpdate.todayHall) {
+          const hallRef = doc(firestore, "halls", employeeToUpdate.todayHall);
+          const hallDoc = await getDoc(hallRef);
+
+          if (hallDoc.exists()) {
+            const hallData = hallDoc.data();
+            const hallWorkingDays = parseInt(hallData.workingDays || "0");
+            const newHallWorkingDays = Math.max(0, hallWorkingDays - 1);
+
+            await updateDoc(hallRef, {
+              workingDays: String(newHallWorkingDays),
+            });
+
+            // Also update local halls state
+            setHalls(
+              halls.map((hall) =>
+                hall.id === employeeToUpdate.todayHall
+                  ? {
+                      ...hall,
+                      workingDays: String(newHallWorkingDays),
+                    }
+                  : hall
+              )
+            );
+          }
+
+          // Also remove the hall assignment for today
+          await updateDoc(employeeRef, {
+            [`dailyHalls.${currentDate}`]: "",
+          });
+        }
+
         // Update local state
         setEmployees(
           employees.map((employee) =>
@@ -167,6 +205,7 @@ const StaffPresenceTracker = () => {
                   workingDays: String(
                     Math.max(0, parseInt(employee.workingDays || "0") - 1)
                   ),
+                  todayHall: "", // Clear the hall assignment for today
                 }
               : employee
           )
@@ -233,14 +272,80 @@ const StaffPresenceTracker = () => {
   // Update employee's hall for the selected day
   const updateEmployeeHall = async (id, hallId) => {
     try {
-      const employeeRef = doc(firestore, "employees", id);
+      // Only proceed if the employee is working today
+      const employeeToUpdate = employees.find((emp) => emp.id === id);
+      if (!employeeToUpdate.workingToday) {
+        console.log("לא ניתן לשייך אולם לעובד שאינו עובד היום");
+        return;
+      }
 
-      // Update the dailyHalls field in Firestore with the selected hall for this day
+      const employeeRef = doc(firestore, "employees", id);
+      const previousHallId = employeeToUpdate.todayHall;
+
+      // Update batch of operations to ensure data consistency
+
+      // 1. Update the employee's dailyHalls
       await updateDoc(employeeRef, {
         [`dailyHalls.${currentDate}`]: hallId,
       });
 
-      // Update local state
+      // 2. If there was a previous hall assigned for today, decrement its workingDays
+      if (previousHallId && previousHallId !== hallId) {
+        const previousHallRef = doc(firestore, "halls", previousHallId);
+        const previousHallDoc = await getDoc(previousHallRef);
+
+        if (previousHallDoc.exists()) {
+          const previousHallData = previousHallDoc.data();
+          const hallWorkingDays = parseInt(previousHallData.workingDays || "0");
+          const newHallWorkingDays = Math.max(0, hallWorkingDays - 1);
+
+          await updateDoc(previousHallRef, {
+            workingDays: String(newHallWorkingDays),
+          });
+
+          // Update local halls state
+          setHalls(
+            halls.map((hall) =>
+              hall.id === previousHallId
+                ? {
+                    ...hall,
+                    workingDays: String(newHallWorkingDays),
+                  }
+                : hall
+            )
+          );
+        }
+      }
+
+      // 3. If assigning to a new hall, increment its workingDays
+      if (hallId) {
+        const hallRef = doc(firestore, "halls", hallId);
+        const hallDoc = await getDoc(hallRef);
+
+        if (hallDoc.exists()) {
+          const hallData = hallDoc.data();
+          const hallWorkingDays = parseInt(hallData.workingDays || "0");
+          const newHallWorkingDays = hallWorkingDays + 1;
+
+          await updateDoc(hallRef, {
+            workingDays: String(newHallWorkingDays),
+          });
+
+          // Update local halls state
+          setHalls(
+            halls.map((hall) =>
+              hall.id === hallId
+                ? {
+                    ...hall,
+                    workingDays: String(newHallWorkingDays),
+                  }
+                : hall
+            )
+          );
+        }
+      }
+
+      // 4. Update local employees state
       setEmployees(
         employees.map((employee) =>
           employee.id === id
@@ -315,6 +420,18 @@ const StaffPresenceTracker = () => {
   const carsCount = employees.filter(
     (emp) => emp.hasCarToday && emp.workingToday
   ).length;
+
+  // Count employees per hall for the current date
+  const hallEmployeeCounts = halls.map((hall) => {
+    const count = employees.filter(
+      (emp) => emp.workingToday && emp.todayHall === hall.id
+    ).length;
+    return {
+      id: hall.id,
+      name: hall.name,
+      count: count,
+    };
+  });
 
   const goBackToDashboard = () => {
     navigate("/home");
@@ -418,6 +535,27 @@ const StaffPresenceTracker = () => {
               <p className="text-3xl font-bold text-blue-600">{carsCount}</p>
             </div>
           </div>
+
+          {/* Hall Distribution Stats */}
+          {hallEmployeeCounts.length > 0 && (
+            <div className="mb-6">
+              <h3 className="font-medium mb-2 text-gray-700">
+                התפלגות עובדים לפי אולמות
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {hallEmployeeCounts.map((hall) => (
+                  <div key={hall.id} className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium mb-1 text-gray-700">
+                      {hall.name}
+                    </h4>
+                    <p className="text-2xl font-bold text-blue-600">
+                      {hall.count} עובדים
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="text-center py-4">טוען רשימת עובדים...</div>
