@@ -54,6 +54,16 @@ const StaffPresenceTracker = () => {
           workingDays: doc.data().workingDays || "0", // Add workingDays for halls
           employees: doc.data().employees || [],
         }));
+
+        // Debug: Log current hall data
+        console.log(
+          "Current halls data:",
+          hallSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+        );
+
         setHalls(hallsList);
 
         // Build query for employees
@@ -172,8 +182,15 @@ const StaffPresenceTracker = () => {
             const hallWorkingDays = parseInt(hallData.workingDays || "0");
             const newHallWorkingDays = Math.max(0, hallWorkingDays - 1);
 
+            // Handle employees array
+            let updatedEmployees = hallData.employees || [];
+
+            // Remove employee from array
+            updatedEmployees = updatedEmployees.filter((emp) => emp.id !== id);
+
             await updateDoc(hallRef, {
               workingDays: String(newHallWorkingDays),
+              employees: updatedEmployees,
             });
 
             // Also update local halls state
@@ -183,6 +200,7 @@ const StaffPresenceTracker = () => {
                   ? {
                       ...hall,
                       workingDays: String(newHallWorkingDays),
+                      employees: updatedEmployees,
                     }
                   : hall
               )
@@ -282,34 +300,43 @@ const StaffPresenceTracker = () => {
       const employeeRef = doc(firestore, "employees", id);
       const previousHallId = employeeToUpdate.todayHall;
 
-      // Update batch of operations to ensure data consistency
-
-      // 1. Update the employee's dailyHalls
+      // 1. Update the employee's dailyHalls in Firestore
       await updateDoc(employeeRef, {
         [`dailyHalls.${currentDate}`]: hallId,
       });
 
-      // 2. If there was a previous hall assigned for today, decrement its workingDays
+      // 2. If there was a previous hall assigned for today, handle that first
       if (previousHallId && previousHallId !== hallId) {
+        // Get reference to previous hall document
         const previousHallRef = doc(firestore, "halls", previousHallId);
         const previousHallDoc = await getDoc(previousHallRef);
 
         if (previousHallDoc.exists()) {
-          const previousHallData = previousHallDoc.data();
-          const hallWorkingDays = parseInt(previousHallData.workingDays || "0");
-          const newHallWorkingDays = Math.max(0, hallWorkingDays - 1);
+          // Get current data
+          const hallData = previousHallDoc.data();
+          const currentWorkingDays = parseInt(hallData.workingDays || "0");
+          const newWorkingDays = Math.max(0, currentWorkingDays - 1);
 
+          // Handle employees array
+          let updatedEmployees = hallData.employees || [];
+
+          // Remove this employee from the array completely
+          updatedEmployees = updatedEmployees.filter((emp) => emp.id !== id);
+
+          // Update previous hall document
           await updateDoc(previousHallRef, {
-            workingDays: String(newHallWorkingDays),
+            workingDays: String(newWorkingDays),
+            employees: updatedEmployees,
           });
 
-          // Update local halls state
+          // Update local state for previous hall
           setHalls(
             halls.map((hall) =>
               hall.id === previousHallId
                 ? {
                     ...hall,
-                    workingDays: String(newHallWorkingDays),
+                    workingDays: String(newWorkingDays),
+                    employees: updatedEmployees,
                   }
                 : hall
             )
@@ -317,27 +344,60 @@ const StaffPresenceTracker = () => {
         }
       }
 
-      // 3. If assigning to a new hall, increment its workingDays
+      // 3. If assigning to a new hall, update that hall
       if (hallId) {
+        // Get reference to new hall document
         const hallRef = doc(firestore, "halls", hallId);
         const hallDoc = await getDoc(hallRef);
 
         if (hallDoc.exists()) {
+          // Get current data
           const hallData = hallDoc.data();
-          const hallWorkingDays = parseInt(hallData.workingDays || "0");
-          const newHallWorkingDays = hallWorkingDays + 1;
+          const currentWorkingDays = parseInt(hallData.workingDays || "0");
+          const newWorkingDays = currentWorkingDays + 1;
 
+          // Handle employees array
+          let updatedEmployees = hallData.employees || [];
+
+          // Check if employee already exists in the array
+          const existingEmpIndex = updatedEmployees.findIndex(
+            (emp) => emp.id === id
+          );
+
+          if (existingEmpIndex !== -1) {
+            // Update existing employee entry
+            updatedEmployees[existingEmpIndex].daysWorked =
+              (updatedEmployees[existingEmpIndex].daysWorked || 0) + 1;
+          } else {
+            // Add new employee entry
+            updatedEmployees.push({
+              id: id,
+              name: employeeToUpdate.name,
+              daysWorked: 1,
+            });
+          }
+
+          // Update new hall document
           await updateDoc(hallRef, {
-            workingDays: String(newHallWorkingDays),
+            workingDays: String(newWorkingDays),
+            employees: updatedEmployees,
           });
 
-          // Update local halls state
+          // Debug log
+          console.log("Updated hall data:", {
+            id: hallId,
+            workingDays: String(newWorkingDays),
+            employees: updatedEmployees,
+          });
+
+          // Update local state for new hall
           setHalls(
             halls.map((hall) =>
               hall.id === hallId
                 ? {
                     ...hall,
-                    workingDays: String(newHallWorkingDays),
+                    workingDays: String(newWorkingDays),
+                    employees: updatedEmployees,
                   }
                 : hall
             )

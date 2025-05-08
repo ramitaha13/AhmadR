@@ -27,7 +27,7 @@ const HallWorkingDaysTracker = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch halls with workingDays field
+        // Fetch halls with workingDays field and employees array
         const hallsCollection = collection(firestore, "halls");
         const hallSnapshot = await getDocs(hallsCollection);
         const hallsList = hallSnapshot.docs.map((doc) => ({
@@ -36,34 +36,17 @@ const HallWorkingDaysTracker = () => {
           location: doc.data().location || "",
           // Get workingDays directly from hall document
           workingDays: parseInt(doc.data().workingDays || "0"),
+          // Get employees array directly from hall document
           employees: doc.data().employees || [],
         }));
 
-        // Fetch employees
+        console.log("Halls data with employees:", hallsList);
+
+        // Fetch employees for additional data
         const employeesCollection = collection(firestore, "employees");
         const employeeSnapshot = await getDocs(employeesCollection);
         const employeesList = employeeSnapshot.docs.map((doc) => {
           const data = doc.data();
-
-          // Get employee details
-          const attendance = data.attendance || {};
-          const dailyHalls = data.dailyHalls || {};
-
-          // Calculate total working days per hall
-          const hallWorkingDays = {};
-
-          // Process attendance data to calculate days worked in each hall
-          Object.keys(attendance).forEach((date) => {
-            if (attendance[date] === true) {
-              // This employee worked on this date
-              // Check which hall they worked in
-              const hallId = dailyHalls[date] || data.assignedHall || "";
-
-              if (hallId) {
-                hallWorkingDays[hallId] = (hallWorkingDays[hallId] || 0) + 1;
-              }
-            }
-          });
 
           return {
             id: doc.id,
@@ -71,14 +54,7 @@ const HallWorkingDaysTracker = () => {
             contactNumber: data.contactNumber || "",
             email: data.email || "",
             assignedHall: data.assignedHall || "",
-            defaultHallName: data.assignedHall
-              ? hallsList.find((h) => h.id === data.assignedHall)?.name ||
-                "לא ידוע"
-              : "לא משויך",
             workingDays: data.workingDays || "0",
-            attendance: attendance,
-            dailyHalls: dailyHalls,
-            hallWorkingDays: hallWorkingDays,
           };
         });
 
@@ -101,9 +77,10 @@ const HallWorkingDaysTracker = () => {
       // Get a reference to the hall document
       const hallRef = doc(firestore, "halls", hallId);
 
-      // Update the workingDays field to "0"
+      // Update the workingDays field to "0" and clear employees array
       await updateDoc(hallRef, {
         workingDays: "0",
+        employees: [], // Reset employees array too
       });
 
       // Show confirmation
@@ -112,7 +89,7 @@ const HallWorkingDaysTracker = () => {
       // Update the local state
       setHalls(
         halls.map((hall) =>
-          hall.id === hallId ? { ...hall, workingDays: 0 } : hall
+          hall.id === hallId ? { ...hall, workingDays: 0, employees: [] } : hall
         )
       );
 
@@ -124,27 +101,26 @@ const HallWorkingDaysTracker = () => {
     }
   };
 
-  // Prepare hall-based statistics
+  // Prepare hall-based statistics directly from hall.employees array
   const hallStats = halls.map((hall) => {
-    // Find employees who have worked in this hall
-    const hallEmployees = employees.filter(
-      (emp) => emp.hallWorkingDays[hall.id] && emp.hallWorkingDays[hall.id] > 0
-    );
-
     return {
       id: hall.id,
       name: hall.name,
       location: hall.location,
-      // Use workingDays directly from the hall document
       totalDaysWorked: hall.workingDays,
-      employeeCount: hallEmployees.length,
-      employees: hallEmployees.map((emp) => ({
-        id: emp.id,
-        name: emp.name,
-        contactNumber: emp.contactNumber,
-        daysWorked: emp.hallWorkingDays[hall.id] || 0,
-        isDefaultHall: emp.assignedHall === hall.id,
-      })),
+      employeeCount: hall.employees.length,
+      employees: hall.employees.map((emp) => {
+        // Find additional employee data
+        const employeeData = employees.find((e) => e.id === emp.id) || {};
+
+        return {
+          id: emp.id,
+          name: emp.name,
+          daysWorked: emp.daysWorked || 0,
+          contactNumber: employeeData.contactNumber || "",
+          isDefaultHall: employeeData.assignedHall === hall.id,
+        };
+      }),
     };
   });
 
@@ -289,9 +265,31 @@ const HallWorkingDaysTracker = () => {
                   <Home size={16} className="ml-2" />
                   {hall.name} ({hall.employeeCount} עובדים)
                 </h3>
-                <span className="text-blue-600 font-medium">
-                  סה"כ ימים: {hall.totalDaysWorked}
-                </span>
+                <div className="flex items-center">
+                  <span className="text-blue-600 font-medium ml-4">
+                    סה"כ ימים: {hall.totalDaysWorked}
+                  </span>
+                  {/* Reset button for this hall's employee list */}
+                  <button
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `האם אתה בטוח שברצונך לאפס את רשימת העובדים באולם ${hall.name}?`
+                        )
+                      ) {
+                        resetHallWorkingDays(hall.id);
+                      }
+                    }}
+                    className="p-2 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700"
+                    title="איפוס רשימת עובדים"
+                    disabled={resetting}
+                  >
+                    <RefreshCw
+                      size={16}
+                      className={resetting ? "animate-spin" : ""}
+                    />
+                  </button>
+                </div>
               </div>
 
               {hall.employees.length > 0 ? (
