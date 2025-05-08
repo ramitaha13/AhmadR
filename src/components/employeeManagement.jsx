@@ -1,7 +1,7 @@
 // ניהול עובדים.js
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Plus, Edit, Trash2, ArrowRight } from "lucide-react";
+import { Users, Plus, Edit, Trash2, ArrowRight, Phone } from "lucide-react";
 import { firestore } from "../firebase"; // ייבוא מסד הנתונים שלך מפיירבייס
 import {
   collection,
@@ -158,6 +158,13 @@ const EmployeeManagement = () => {
 
   const goBackToDashboard = () => {
     navigate("/home");
+  };
+
+  // פונקציה חדשה: פורמט מספר טלפון למספר ללא מקפים או רווחים
+  const formatPhoneNumber = (phoneNumber) => {
+    if (!phoneNumber) return "";
+    // מסיר כל התווים שאינם ספרות
+    return phoneNumber.replace(/\D/g, "");
   };
 
   return (
@@ -341,10 +348,31 @@ const EmployeeManagement = () => {
                           {employee.workingDays || "-"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
-                          {employee.contactNumber || "-"}
+                          {employee.contactNumber ? (
+                            <a
+                              href={`tel:${formatPhoneNumber(
+                                employee.contactNumber
+                              )}`}
+                              className="flex items-center justify-end text-blue-600 hover:text-blue-800"
+                            >
+                              <Phone size={16} className="ml-1" />
+                              {employee.contactNumber}
+                            </a>
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
-                          {employee.email || "-"}
+                          {employee.email ? (
+                            <a
+                              href={`mailto:${employee.email}`}
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              {employee.email}
+                            </a>
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
                           {employee.assignedHall

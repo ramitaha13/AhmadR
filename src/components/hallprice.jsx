@@ -7,9 +7,12 @@ import {
   Building,
   ArrowRight,
   RefreshCw,
+  Clock,
+  Download,
 } from "lucide-react";
 import { firestore } from "../firebase"; // Import your firebase db
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
+import * as XLSX from "xlsx"; // Import XLSX for Excel file generation
 
 const HallWorkingDaysTracker = () => {
   const navigate = useNavigate();
@@ -38,6 +41,8 @@ const HallWorkingDaysTracker = () => {
           workingDays: parseInt(doc.data().workingDays || "0"),
           // Get employees array directly from hall document
           employees: doc.data().employees || [],
+          // Get employeeDates directly from hall document
+          employeeDates: doc.data().employeeDates || {},
         }));
 
         console.log("Halls data with employees:", hallsList);
@@ -48,6 +53,15 @@ const HallWorkingDaysTracker = () => {
         const employeesList = employeeSnapshot.docs.map((doc) => {
           const data = doc.data();
 
+          // Get additional data for employee dates
+          const attendance = data.attendance || {};
+          const dailyHalls = data.dailyHalls || {};
+
+          // Get all dates this employee worked
+          const workDates = Object.keys(attendance).filter(
+            (date) => attendance[date] === true
+          );
+
           return {
             id: doc.id,
             name: data.name || "",
@@ -55,6 +69,8 @@ const HallWorkingDaysTracker = () => {
             email: data.email || "",
             assignedHall: data.assignedHall || "",
             workingDays: data.workingDays || "0",
+            workDates: workDates,
+            dailyHalls: dailyHalls,
           };
         });
 
@@ -77,10 +93,11 @@ const HallWorkingDaysTracker = () => {
       // Get a reference to the hall document
       const hallRef = doc(firestore, "halls", hallId);
 
-      // Update the workingDays field to "0" and clear employees array
+      // Update the workingDays field to "0", clear employees array and employeeDates
       await updateDoc(hallRef, {
         workingDays: "0",
-        employees: [], // Reset employees array too
+        employees: [], // Reset employees array
+        employeeDates: {}, // Reset employeeDates map
       });
 
       // Show confirmation
@@ -89,7 +106,9 @@ const HallWorkingDaysTracker = () => {
       // Update the local state
       setHalls(
         halls.map((hall) =>
-          hall.id === hallId ? { ...hall, workingDays: 0, employees: [] } : hall
+          hall.id === hallId
+            ? { ...hall, workingDays: 0, employees: [], employeeDates: {} }
+            : hall
         )
       );
 
@@ -101,14 +120,207 @@ const HallWorkingDaysTracker = () => {
     }
   };
 
+  // Get all unique working dates for a hall
+  const getHallWorkDates = (hall) => {
+    // Collect all dates from employeeDates
+    let allDates = [];
+
+    // If employeeDates exists for this hall
+    if (hall.employeeDates) {
+      // Go through each employee's dates
+      Object.values(hall.employeeDates).forEach((dates) => {
+        if (Array.isArray(dates)) {
+          allDates = [...allDates, ...dates];
+        }
+      });
+    }
+
+    // If no employeeDates, try to infer from employees' attendance and dailyHalls
+    if (allDates.length === 0) {
+      hall.employees.forEach((hallEmployee) => {
+        const employee = employees.find((e) => e.id === hallEmployee.id);
+
+        if (employee) {
+          // Find dates when this employee worked at this hall
+          const workDatesInThisHall = employee.workDates.filter(
+            (date) => employee.dailyHalls[date] === hall.id
+          );
+
+          allDates = [...allDates, ...workDatesInThisHall];
+        }
+      });
+    }
+
+    // Remove duplicates and sort
+    return [...new Set(allDates)].sort();
+  };
+
+  // Format a date for display
+  const formatDate = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("he-IL", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  // Export hall data to Excel file
+  const exportHallToExcel = (hall) => {
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+
+    // Create main sheet with hall info
+    const mainData = [
+      ["שם האולם", hall.name],
+      ["מיקום", hall.location],
+      ['סה"כ ימי עבודה', hall.totalDaysWorked],
+      ["מספר עובדים", hall.employeeCount],
+      [""], // Empty row for spacing
+      ["נתוני עובדים"], // Header for employee data
+      ["שם", "טלפון", "אולם קבוע", "ימי עבודה באולם"],
+    ];
+
+    // Add employee rows
+    hall.employees
+      .sort((a, b) => b.daysWorked - a.daysWorked)
+      .forEach((employee) => {
+        mainData.push([
+          employee.name,
+          employee.contactNumber || "",
+          employee.isDefaultHall ? "כן" : "לא",
+          employee.daysWorked,
+        ]);
+      });
+
+    // Add empty row and dates section if there are dates
+    if (hall.workDates && hall.workDates.length > 0) {
+      mainData.push(
+        [""], // Empty row
+        ["תאריכי עבודה באולם"] // Header for dates
+      );
+
+      // Add dates in rows of 5
+      for (let i = 0; i < hall.workDates.length; i += 5) {
+        const dateRow = [];
+        for (let j = 0; j < 5 && i + j < hall.workDates.length; j++) {
+          dateRow.push(formatDate(hall.workDates[i + j]));
+        }
+        mainData.push(dateRow);
+      }
+    }
+
+    // Convert to worksheet
+    const ws = XLSX.utils.aoa_to_sheet(mainData);
+
+    // Set column widths
+    const colWidths = [{ wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
+    ws["!cols"] = colWidths;
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, "מידע אולם");
+
+    // Create Excel file and initiate download
+    const fileName = `אולם_${hall.name.replace(
+      /\s+/g,
+      "_"
+    )}_${currentMonth}_${currentYear}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // Export all halls to a single Excel file
+  const exportAllHallsToExcel = () => {
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+
+    // Create summary sheet
+    const summaryData = [
+      ["סיכום אולמות"],
+      [""],
+      ["שם האולם", "מיקום", "ימי עבודה", "מספר עובדים"],
+    ];
+
+    // Add hall summary rows
+    hallStats.forEach((hall) => {
+      summaryData.push([
+        hall.name,
+        hall.location,
+        hall.totalDaysWorked,
+        hall.employeeCount,
+      ]);
+    });
+
+    // Convert to worksheet
+    const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, summaryWs, "סיכום אולמות");
+
+    // Create a worksheet for each hall
+    hallStats.forEach((hall) => {
+      const hallData = [
+        [`פרטי אולם: ${hall.name}`],
+        [""],
+        ["שם", "טלפון", "אולם קבוע", "ימי עבודה באולם"],
+      ];
+
+      // Add employee rows
+      hall.employees
+        .sort((a, b) => b.daysWorked - a.daysWorked)
+        .forEach((employee) => {
+          hallData.push([
+            employee.name,
+            employee.contactNumber || "",
+            employee.isDefaultHall ? "כן" : "לא",
+            employee.daysWorked,
+          ]);
+        });
+
+      // Add dates section
+      if (hall.workDates && hall.workDates.length > 0) {
+        hallData.push([""], ["תאריכי עבודה:"]);
+
+        // Format dates
+        const formattedDates = hall.workDates.map((date) => formatDate(date));
+
+        // Add dates in rows of 5
+        for (let i = 0; i < formattedDates.length; i += 5) {
+          const dateRow = [];
+          for (let j = 0; j < 5 && i + j < formattedDates.length; j++) {
+            dateRow.push(formattedDates[i + j]);
+          }
+          hallData.push(dateRow);
+        }
+      }
+
+      // Convert to worksheet
+      const hallWs = XLSX.utils.aoa_to_sheet(hallData);
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(wb, hallWs, hall.name.slice(0, 31)); // Excel sheet names have a 31 char limit
+    });
+
+    // Create Excel file and initiate download
+    XLSX.writeFile(wb, `סיכום_אולמות_${currentMonth}_${currentYear}.xlsx`);
+  };
+
   // Prepare hall-based statistics directly from hall.employees array
   const hallStats = halls.map((hall) => {
+    // Get all working dates for this hall
+    const workDates = getHallWorkDates(hall);
+
     return {
       id: hall.id,
       name: hall.name,
       location: hall.location,
       totalDaysWorked: hall.workingDays,
       employeeCount: hall.employees.length,
+      workDates: workDates,
+      dateCount: workDates.length,
       employees: hall.employees.map((emp) => {
         // Find additional employee data
         const employeeData = employees.find((e) => e.id === emp.id) || {};
@@ -166,11 +378,19 @@ const HallWorkingDaysTracker = () => {
           {currentYear}
         </p>
 
-        {/* Overall Stats */}
+        {/* Overall Stats with export button */}
         <div className="mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100">
-          <h2 className="text-lg font-semibold text-blue-800 mb-2">
-            סיכום כללי
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-blue-800">סיכום כללי</h2>
+            <button
+              onClick={exportAllHallsToExcel}
+              className="flex items-center p-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              title="ייצוא כל האולמות לאקסל"
+            >
+              <Download size={16} className="ml-1" />
+              ייצוא כל האולמות לאקסל
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <p className="text-sm text-blue-600">סה"כ עובדים</p>
@@ -207,7 +427,16 @@ const HallWorkingDaysTracker = () => {
                 key={hall.id}
                 className="bg-white p-4 rounded-lg shadow-sm border-r-4 border-blue-500"
               >
-                <h3 className="font-medium text-gray-800">{hall.name}</h3>
+                <div className="flex justify-between items-start">
+                  <h3 className="font-medium text-gray-800">{hall.name}</h3>
+                  <button
+                    onClick={() => exportHallToExcel(hall)}
+                    className="p-1 rounded-full bg-green-100 hover:bg-green-200 text-green-700"
+                    title={`ייצוא ${hall.name} לאקסל`}
+                  >
+                    <Download size={16} />
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <div>
                     <p className="text-xs text-gray-500">עובדים</p>
@@ -269,6 +498,14 @@ const HallWorkingDaysTracker = () => {
                   <span className="text-blue-600 font-medium ml-4">
                     סה"כ ימים: {hall.totalDaysWorked}
                   </span>
+                  {/* Download button for this hall */}
+                  <button
+                    onClick={() => exportHallToExcel(hall)}
+                    className="p-2 rounded-full bg-green-200 hover:bg-green-300 text-green-700 ml-2"
+                    title={`ייצוא ${hall.name} לאקסל`}
+                  >
+                    <Download size={16} />
+                  </button>
                   {/* Reset button for this hall's employee list */}
                   <button
                     onClick={() => {
@@ -280,7 +517,7 @@ const HallWorkingDaysTracker = () => {
                         resetHallWorkingDays(hall.id);
                       }
                     }}
-                    className="p-2 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700"
+                    className="p-2 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 mr-2"
                     title="איפוס רשימת עובדים"
                     disabled={resetting}
                   >
@@ -291,6 +528,25 @@ const HallWorkingDaysTracker = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Display Working Dates for this hall - KEEPING THIS SECTION */}
+              {hall.workDates.length > 0 && (
+                <div className="px-4 py-2 bg-blue-50">
+                  <p className="text-sm text-blue-700 font-medium mb-1">
+                    תאריכי עבודה באולם זה:
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {hall.workDates.map((date) => (
+                      <span
+                        key={date}
+                        className="text-xs bg-white text-blue-700 px-2 py-1 rounded-full border border-blue-200"
+                      >
+                        {formatDate(date)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {hall.employees.length > 0 ? (
                 <div className="overflow-x-auto">

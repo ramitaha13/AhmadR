@@ -53,6 +53,8 @@ const StaffPresenceTracker = () => {
           location: doc.data().location || "",
           workingDays: doc.data().workingDays || "0", // Add workingDays for halls
           employees: doc.data().employees || [],
+          // Track dates for each employee
+          employeeDates: doc.data().employeeDates || {},
         }));
 
         // Debug: Log current hall data
@@ -188,9 +190,28 @@ const StaffPresenceTracker = () => {
             // Remove employee from array
             updatedEmployees = updatedEmployees.filter((emp) => emp.id !== id);
 
+            // Handle employeeDates map
+            let employeeDates = hallData.employeeDates || {};
+
+            // Remove this date from employee's dates if it exists
+            if (employeeDates[id]) {
+              const dateArray = employeeDates[id] || [];
+              const updatedDates = dateArray.filter(
+                (date) => date !== currentDate
+              );
+
+              if (updatedDates.length > 0) {
+                employeeDates[id] = updatedDates;
+              } else {
+                // If no dates left, remove employee entry
+                delete employeeDates[id];
+              }
+            }
+
             await updateDoc(hallRef, {
               workingDays: String(newHallWorkingDays),
               employees: updatedEmployees,
+              employeeDates: employeeDates,
             });
 
             // Also update local halls state
@@ -201,6 +222,7 @@ const StaffPresenceTracker = () => {
                       ...hall,
                       workingDays: String(newHallWorkingDays),
                       employees: updatedEmployees,
+                      employeeDates: employeeDates,
                     }
                   : hall
               )
@@ -323,10 +345,29 @@ const StaffPresenceTracker = () => {
           // Remove this employee from the array completely
           updatedEmployees = updatedEmployees.filter((emp) => emp.id !== id);
 
+          // Handle employeeDates map
+          let employeeDates = hallData.employeeDates || {};
+
+          // Remove this date from employee's dates if it exists
+          if (employeeDates[id]) {
+            const dateArray = employeeDates[id] || [];
+            const updatedDates = dateArray.filter(
+              (date) => date !== currentDate
+            );
+
+            if (updatedDates.length > 0) {
+              employeeDates[id] = updatedDates;
+            } else {
+              // If no dates left, remove employee entry
+              delete employeeDates[id];
+            }
+          }
+
           // Update previous hall document
           await updateDoc(previousHallRef, {
             workingDays: String(newWorkingDays),
             employees: updatedEmployees,
+            employeeDates: employeeDates,
           });
 
           // Update local state for previous hall
@@ -337,6 +378,7 @@ const StaffPresenceTracker = () => {
                     ...hall,
                     workingDays: String(newWorkingDays),
                     employees: updatedEmployees,
+                    employeeDates: employeeDates,
                   }
                 : hall
             )
@@ -377,10 +419,25 @@ const StaffPresenceTracker = () => {
             });
           }
 
+          // Handle employeeDates map to track dates for each employee
+          let employeeDates = hallData.employeeDates || {};
+
+          // Get or initialize the array of dates for this employee
+          let employeeDateArray = employeeDates[id] || [];
+
+          // Add the current date if it's not already in the array
+          if (!employeeDateArray.includes(currentDate)) {
+            employeeDateArray.push(currentDate);
+          }
+
+          // Update the dates map
+          employeeDates[id] = employeeDateArray;
+
           // Update new hall document
           await updateDoc(hallRef, {
             workingDays: String(newWorkingDays),
             employees: updatedEmployees,
+            employeeDates: employeeDates,
           });
 
           // Debug log
@@ -388,6 +445,7 @@ const StaffPresenceTracker = () => {
             id: hallId,
             workingDays: String(newWorkingDays),
             employees: updatedEmployees,
+            employeeDates: employeeDates,
           });
 
           // Update local state for new hall
@@ -398,6 +456,7 @@ const StaffPresenceTracker = () => {
                     ...hall,
                     workingDays: String(newWorkingDays),
                     employees: updatedEmployees,
+                    employeeDates: employeeDates,
                   }
                 : hall
             )
