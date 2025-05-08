@@ -174,7 +174,7 @@ const StaffPresenceTracker = () => {
         });
 
         // If the employee was assigned to a hall today and now is not working,
-        // also decrement the hall's workingDays and remove the hall assignment
+        // also decrement the hall's workingDays and update the employee's daysWorked
         if (employeeToUpdate.todayHall) {
           const hallRef = doc(firestore, "halls", employeeToUpdate.todayHall);
           const hallDoc = await getDoc(hallRef);
@@ -184,11 +184,28 @@ const StaffPresenceTracker = () => {
             const hallWorkingDays = parseInt(hallData.workingDays || "0");
             const newHallWorkingDays = Math.max(0, hallWorkingDays - 1);
 
-            // Handle employees array
+            // Handle employees array - FIXED: Don't remove the employee, just decrement their daysWorked
             let updatedEmployees = hallData.employees || [];
 
-            // Remove employee from array
-            updatedEmployees = updatedEmployees.filter((emp) => emp.id !== id);
+            // Find employee in the hall's employee array
+            const empIndex = updatedEmployees.findIndex((emp) => emp.id === id);
+
+            if (empIndex !== -1) {
+              // Employee exists, just decrement their daysWorked (ensure it doesn't go below 0)
+              const currentDaysWorked =
+                updatedEmployees[empIndex].daysWorked || 0;
+              updatedEmployees[empIndex].daysWorked = Math.max(
+                0,
+                currentDaysWorked - 1
+              );
+
+              // If daysWorked becomes 0, then we can remove the employee
+              if (updatedEmployees[empIndex].daysWorked === 0) {
+                updatedEmployees = updatedEmployees.filter(
+                  (emp) => emp.id !== id
+                );
+              }
+            }
 
             // Handle employeeDates map
             let employeeDates = hallData.employeeDates || {};
@@ -339,11 +356,28 @@ const StaffPresenceTracker = () => {
           const currentWorkingDays = parseInt(hallData.workingDays || "0");
           const newWorkingDays = Math.max(0, currentWorkingDays - 1);
 
-          // Handle employees array
+          // Handle employees array - FIXED: Don't completely remove employee, just decrement daysWorked
           let updatedEmployees = hallData.employees || [];
 
-          // Remove this employee from the array completely
-          updatedEmployees = updatedEmployees.filter((emp) => emp.id !== id);
+          // Find employee in the previous hall's employee array
+          const empIndex = updatedEmployees.findIndex((emp) => emp.id === id);
+
+          if (empIndex !== -1) {
+            // Employee exists, just decrement their daysWorked (ensure it doesn't go below 0)
+            const currentDaysWorked =
+              updatedEmployees[empIndex].daysWorked || 0;
+            updatedEmployees[empIndex].daysWorked = Math.max(
+              0,
+              currentDaysWorked - 1
+            );
+
+            // If daysWorked becomes 0, then we can remove the employee
+            if (updatedEmployees[empIndex].daysWorked === 0) {
+              updatedEmployees = updatedEmployees.filter(
+                (emp) => emp.id !== id
+              );
+            }
+          }
 
           // Handle employeeDates map
           let employeeDates = hallData.employeeDates || {};
