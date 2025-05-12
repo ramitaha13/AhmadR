@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Car,
   MessageSquare,
+  Search,
 } from "lucide-react";
 import { firestore } from "../firebase"; // ייבוא מסד הנתונים שלך מפיירבייס
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
@@ -17,6 +18,8 @@ import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 const StaffSalaryTracker = () => {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
+  const [filteredEmployees, setFilteredEmployees] = useState([]);
+  const [nameFilter, setNameFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [editingComment, setEditingComment] = useState(null);
 
@@ -74,6 +77,7 @@ const StaffSalaryTracker = () => {
         });
 
         setEmployees(employeesList);
+        setFilteredEmployees(employeesList); // אתחול הרשימה המסוננת עם כל העובדים
         setLoading(false);
       } catch (error) {
         console.error("שגיאה בטעינת נתונים: ", error);
@@ -83,6 +87,23 @@ const StaffSalaryTracker = () => {
 
     fetchData();
   }, []);
+
+  // סינון עובדים לפי שם
+  useEffect(() => {
+    if (nameFilter.trim() === "") {
+      setFilteredEmployees(employees);
+    } else {
+      const filtered = employees.filter((employee) =>
+        employee.name.toLowerCase().includes(nameFilter.toLowerCase())
+      );
+      setFilteredEmployees(filtered);
+    }
+  }, [nameFilter, employees]);
+
+  // ניקוי סינון לפי שם
+  const clearNameFilter = () => {
+    setNameFilter("");
+  };
 
   // עדכון שכר יומי לעובד
   const updateDailyRate = async (id, newRate) => {
@@ -197,8 +218,8 @@ const StaffSalaryTracker = () => {
     return (rate * days).toFixed(2);
   };
 
-  // חישוב סה"כ משכורת חודשית לכל העובדים
-  const totalMonthlySalary = employees
+  // חישוב סה"כ משכורת חודשית לכל העובדים המסוננים
+  const totalMonthlySalary = filteredEmployees
     .reduce((total, emp) => {
       // המרת מחרוזות למספרים לצורך חישוב
       const rate = parseFloat(emp.dailyRate) || 0;
@@ -213,8 +234,8 @@ const StaffSalaryTracker = () => {
     let csvContent =
       'שם,מספר טלפון,דוא"ל,ימי עבודה,ימים עם רכב,הערה,שכר יומי,שעות ליום,משכורת חודשית\n';
 
-    // הוספת כל עובד כשורה
-    employees.forEach((employee) => {
+    // הוספת כל עובד מסונן כשורה
+    filteredEmployees.forEach((employee) => {
       const monthlySalary = calculateMonthlySalary(
         employee.dailyRate,
         employee.workingDays
@@ -292,11 +313,42 @@ const StaffSalaryTracker = () => {
             </div>
           </div>
 
+          {/* סינון לפי שם */}
+          <div className="mb-6" dir="rtl">
+            <div className="flex items-center">
+              <div className="relative flex-grow">
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <Search size={18} className="text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                  className="block w-full p-2 pr-10 border border-gray-300 rounded-md text-right"
+                  placeholder="סנן לפי שם עובד"
+                />
+              </div>
+              {nameFilter && (
+                <button
+                  onClick={clearNameFilter}
+                  className="mr-2 px-3 py-2 bg-gray-200 text-gray-700 rounded-md text-sm"
+                >
+                  נקה סינון
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* סיכום סטטיסטיקות */}
           <div className="mb-6">
             <div className="bg-blue-50 p-4 rounded-lg">
               <h3 className="font-medium mb-2 text-gray-700 flex items-center">
                 סה"כ משכורות חודשיות
+                {nameFilter && (
+                  <span className="mr-2 text-sm text-gray-500">
+                    (מסונן לפי '{nameFilter}')
+                  </span>
+                )}
               </h3>
               <p className="text-3xl font-bold text-blue-600">
                 ₪{totalMonthlySalary}
@@ -338,17 +390,19 @@ const StaffSalaryTracker = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {employees.length === 0 ? (
+                  {filteredEmployees.length === 0 ? (
                     <tr>
                       <td
                         colSpan="8"
                         className="px-6 py-4 text-center text-sm text-gray-500"
                       >
-                        לא נמצאו עובדים.
+                        {nameFilter
+                          ? "לא נמצאו עובדים התואמים לחיפוש."
+                          : "לא נמצאו עובדים."}
                       </td>
                     </tr>
                   ) : (
-                    employees.map((employee) => (
+                    filteredEmployees.map((employee) => (
                       <tr key={employee.id}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
                           {employee.name}
@@ -467,6 +521,11 @@ const StaffSalaryTracker = () => {
               <div className="text-right">
                 <h3 className="font-medium text-blue-800 flex items-center justify-end">
                   סה"כ משכורות חודשיות - {currentMonth} {currentYear}
+                  {nameFilter && (
+                    <span className="mr-2 text-sm text-blue-600">
+                      (מסונן לפי '{nameFilter}')
+                    </span>
+                  )}
                 </h3>
                 <p className="text-sm text-blue-600 mt-1">
                   מבוסס על ימי העבודה שהוזנו עבור כל עובד

@@ -10,6 +10,7 @@ import {
   Download,
   ArrowRight,
   Car,
+  Search,
 } from "lucide-react";
 import { firestore } from "../firebase"; // Import your firebase db
 import {
@@ -25,12 +26,14 @@ import {
 const StaffPresenceTracker = () => {
   const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
+  const [filteredEmployees, setFilteredEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(
     new Date().toISOString().split("T")[0]
   );
   const [halls, setHalls] = useState([]);
   const [selectedHall, setSelectedHall] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
 
   // Format date for display
   const formattedDate = new Date(currentDate).toLocaleDateString("he-IL", {
@@ -126,6 +129,18 @@ const StaffPresenceTracker = () => {
 
     fetchData();
   }, [currentDate, selectedHall]);
+
+  // Apply name filter to employees list
+  useEffect(() => {
+    if (nameFilter.trim() === "") {
+      setFilteredEmployees(employees);
+    } else {
+      const filtered = employees.filter((employee) =>
+        employee.name.toLowerCase().includes(nameFilter.toLowerCase())
+      );
+      setFilteredEmployees(filtered);
+    }
+  }, [nameFilter, employees]);
 
   // Toggle employee working status and increment/decrement workingDays
   const toggleWorkingStatus = async (id) => {
@@ -527,6 +542,11 @@ const StaffPresenceTracker = () => {
     setSelectedHall(e.target.value);
   };
 
+  // Clear name filter
+  const clearNameFilter = () => {
+    setNameFilter("");
+  };
+
   // Export employee list to CSV
   const exportToCSV = () => {
     // Create CSV header
@@ -534,7 +554,7 @@ const StaffPresenceTracker = () => {
       "שם,מספר טלפון,דוא״ל,אולם משויך,ימי עבודה,עובד היום,יש רכב,ימים עם רכב\n";
 
     // Add each employee as a row
-    employees.forEach((employee) => {
+    filteredEmployees.forEach((employee) => {
       const hallName = employee.todayHall
         ? halls.find((hall) => hall.id === employee.todayHall)?.name || "-"
         : "-";
@@ -566,17 +586,19 @@ const StaffPresenceTracker = () => {
     document.body.removeChild(link);
   };
 
-  // Count working employees
-  const workingCount = employees.filter((emp) => emp.workingToday).length;
+  // Count working employees among filtered employees
+  const workingCount = filteredEmployees.filter(
+    (emp) => emp.workingToday
+  ).length;
 
-  // Count employees with cars
-  const carsCount = employees.filter(
+  // Count employees with cars among filtered employees
+  const carsCount = filteredEmployees.filter(
     (emp) => emp.hasCarToday && emp.workingToday
   ).length;
 
-  // Count employees per hall for the current date
+  // Count employees per hall for the current date - only counting filtered employees
   const hallEmployeeCounts = halls.map((hall) => {
-    const count = employees.filter(
+    const count = filteredEmployees.filter(
       (emp) => emp.workingToday && emp.todayHall === hall.id
     ).length;
     return {
@@ -653,6 +675,32 @@ const StaffPresenceTracker = () => {
             </div>
           </div>
 
+          {/* Name Filter */}
+          <div className="mb-6">
+            <div className="flex items-center">
+              <div className="relative flex-grow">
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <Search size={18} className="text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                  className="block w-full p-2 pr-10 border border-gray-300 rounded-md text-right"
+                  placeholder="סנן לפי שם עובד"
+                />
+              </div>
+              {nameFilter && (
+                <button
+                  onClick={clearNameFilter}
+                  className="mr-2 px-3 py-2 bg-gray-200 text-gray-700 rounded-md text-sm"
+                >
+                  נקה סינון
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Current Date Display */}
           <div className="mb-6 text-center">
             <h3 className="text-lg font-medium text-gray-700">
@@ -677,7 +725,7 @@ const StaffPresenceTracker = () => {
                 לא עובדים היום
               </h3>
               <p className="text-3xl font-bold text-red-600">
-                {employees.length - workingCount}
+                {filteredEmployees.length - workingCount}
               </p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
@@ -744,17 +792,19 @@ const StaffPresenceTracker = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {employees.length === 0 ? (
+                  {filteredEmployees.length === 0 ? (
                     <tr>
                       <td
                         colSpan="8"
                         className="px-6 py-4 text-center text-sm text-gray-500"
                       >
-                        לא נמצאו עובדים לפי הקריטריונים שנבחרו.
+                        {nameFilter
+                          ? "לא נמצאו עובדים התואמים לחיפוש."
+                          : "לא נמצאו עובדים לפי הקריטריונים שנבחרו."}
                       </td>
                     </tr>
                   ) : (
-                    employees.map((employee) => (
+                    filteredEmployees.map((employee) => (
                       <tr key={employee.id}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {employee.name}
